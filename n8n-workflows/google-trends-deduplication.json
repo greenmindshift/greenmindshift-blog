@@ -1,0 +1,90 @@
+{
+  "name": "Google Trends mit Duplikatserkennung",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 24 }]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Täglich um 9:00 Uhr",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://trends.google.com/trends/api/dailytrends",
+        "options": {
+          "queryParameters": {
+            "hl": "de", "tz": "-60", "geo": "DE", "ns": "15"
+          }
+        }
+      },
+      "id": "google-trends",
+      "name": "Google Trends abrufen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst sustainabilityKeywords = [\n  'nachhaltigkeit', 'sustainability', 'klimaschutz', 'umwelt',\n  'erneuerbare energie', 'solar', 'wind', 'elektro',\n  'recycling', 'bio', 'öko', 'green', 'klimawandel'\n];\n\nconst trendsData = JSON.parse($input.all()[0].json.body.substring(5));\nconst relevantTrends = [];\n\nfor (const day of trendsData.default.trendingSearchesDays) {\n  for (const search of day.trendingSearches) {\n    const title = search.title.query.toLowerCase();\n    const isRelevant = sustainabilityKeywords.some(keyword => \n      title.includes(keyword)\n    );\n    \n    if (isRelevant) {\n      const trendContent = JSON.stringify({\n        query: search.title.query,\n        date: day.date,\n        traffic: search.formattedTraffic\n      });\n      \n      const trendHash = crypto.createHash('sha256')\n        .update(trendContent).digest('hex');\n      \n      relevantTrends.push({\n        query: search.title.query,\n        traffic: search.formattedTraffic,\n        date: day.date,\n        trendHash: trendHash,\n        sourceData: search\n      });\n    }\n  }\n}\n\nreturn relevantTrends.map(trend => ({ json: trend }));"
+      },
+      "id": "filter-trends",
+      "name": "Trends filtern + Hash",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://greenmindshift.com/api/trends/check-processed",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{$env.BLOG_API_TOKEN}}",
+            "Content-Type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "{\"trendHash\": \"{{$json.trendHash}}\", \"query\": \"{{$json.query}}\"}"
+      },
+      "id": "check-duplicate",
+      "name": "Duplikat prüfen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{$json.isProcessed}}", "value2": false }]
+        }
+      },
+      "id": "is-new-trend",
+      "name": "Ist neuer Trend?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Täglich um 9:00 Uhr": {
+      "main": [[{ "node": "Google Trends abrufen", "type": "main", "index": 0 }]]
+    },
+    "Google Trends abrufen": {
+      "main": [[{ "node": "Trends filtern + Hash", "type": "main", "index": 0 }]]
+    },
+    "Trends filtern + Hash": {
+      "main": [[{ "node": "Duplikat prüfen", "type": "main", "index": 0 }]]
+    },
+    "Duplikat prüfen": {
+      "main": [[{ "node": "Ist neuer Trend?", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": { "timezone": "Europe/Berlin" }
+} 

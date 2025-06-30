@@ -1,0 +1,222 @@
+{
+  "name": "Google Trends zu Blog Post",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Täglich um 9:00 Uhr",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://trends.google.com/trends/api/dailytrends",
+        "options": {
+          "queryParameters": {
+            "hl": "de",
+            "tz": "-60",
+            "geo": "DE",
+            "ns": "15"
+          }
+        }
+      },
+      "id": "google-trends",
+      "name": "Google Trends abrufen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtere Trends nach Nachhaltigkeit Keywords\nconst sustainabilityKeywords = [\n  'nachhaltigkeit', 'sustainability', 'klimaschutz', 'umwelt',\n  'erneuerbare energie', 'solar', 'wind', 'elektro',\n  'recycling', 'bio', 'öko', 'green', 'klimawandel'\n];\n\nconst trendsData = JSON.parse($input.all()[0].json.body.substring(5)); // Remove )]}' prefix\nconst relevantTrends = [];\n\nfor (const day of trendsData.default.trendingSearchesDays) {\n  for (const search of day.trendingSearches) {\n    const title = search.title.query.toLowerCase();\n    const isRelevant = sustainabilityKeywords.some(keyword => \n      title.includes(keyword)\n    );\n    \n    if (isRelevant) {\n      relevantTrends.push({\n        query: search.title.query,\n        traffic: search.formattedTraffic,\n        articles: search.articles || [],\n        date: day.date\n      });\n    }\n  }\n}\n\nreturn relevantTrends.map(trend => ({ json: trend }));"
+      },
+      "id": "filter-trends",
+      "name": "Nachhaltigkeits-Trends filtern",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/customsearch/v1",
+        "options": {
+          "queryParameters": {
+            "key": "={{$env.GOOGLE_SEARCH_API_KEY}}",
+            "cx": "={{$env.GOOGLE_SEARCH_ENGINE_ID}}",
+            "q": "={{$json.query}} nachhaltigkeit umwelt",
+            "num": "5",
+            "lr": "lang_de"
+          }
+        }
+      },
+      "id": "google-search",
+      "name": "Google Suche",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "{\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Erstelle einen informativen Blog-Artikel auf Deutsch über das Thema '{{$json.query}}' mit Fokus auf Nachhaltigkeit. Der Artikel soll:\\n\\n1. Eine ansprechende Überschrift haben\\n2. Eine kurze Einleitung (2-3 Sätze)\\n3. 3-4 Hauptabschnitte mit Unterüberschriften\\n4. Praktische Tipps für den Alltag\\n5. Ein Fazit\\n6. SEO-optimiert sein\\n\\nVerwende folgende Informationen als Basis:\\n{{$('Google Suche').all()[0].json.items.map(item => item.title + ': ' + item.snippet).join('\\n\\n')}}\\n\\nFormat: JSON mit den Feldern title, excerpt, content, seoTitle, seoDescription, tags\"\n    }]\n  }]\n}"
+      },
+      "id": "gemini-ai",
+      "name": "Gemini AI Content Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gemini Response und erstelle Blog Post Daten\nconst response = $input.all()[0].json;\nconst content = response.candidates[0].content.parts[0].text;\n\n// Extrahiere JSON aus der Antwort\nlet blogData;\ntry {\n  const jsonMatch = content.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    blogData = JSON.parse(jsonMatch[0]);\n  } else {\n    throw new Error('Kein JSON gefunden');\n  }\n} catch (error) {\n  // Fallback: Manuell parsen\n  blogData = {\n    title: content.split('\\n')[0].replace(/^#+\\s*/, ''),\n    excerpt: content.split('\\n').slice(1, 3).join(' '),\n    content: content,\n    seoTitle: content.split('\\n')[0].replace(/^#+\\s*/, ''),\n    seoDescription: content.split('\\n').slice(1, 3).join(' ').substring(0, 160),\n    tags: ['nachhaltigkeit', 'umwelt']\n  };\n}\n\n// Erstelle Slug aus Titel\nconst slug = blogData.title\n  .toLowerCase()\n  .replace(/ä/g, 'ae')\n  .replace(/ö/g, 'oe')\n  .replace(/ü/g, 'ue')\n  .replace(/ß/g, 'ss')\n  .replace(/[^a-z0-9\\s-]/g, '')\n  .replace(/\\s+/g, '-')\n  .replace(/-+/g, '-')\n  .trim('-');\n\nreturn [{\n  json: {\n    ...blogData,\n    slug,\n    status: 'REVIEW', // Zur manuellen Überprüfung\n    aiGenerated: true,\n    trendsData: $('filter-trends').all()[0].json\n  }\n}];"
+      },
+      "id": "process-content",
+      "name": "Content verarbeiten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://greenmindshift.com/api/articles",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{$env.BLOG_API_TOKEN}}",
+            "Content-Type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "={{JSON.stringify($json)}}"
+      },
+      "id": "create-blog-post",
+      "name": "Blog Post erstellen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "{{$env.SLACK_WEBHOOK_URL}}",
+        "options": {
+          "headers": {
+            "Content-Type": "application/json"
+          }
+        },
+        "jsonParameters": true,
+        "bodyParametersJson": "{\n  \"text\": \"🌱 Neuer AI-generierter Blog Post erstellt!\",\n  \"blocks\": [\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*{{$('process-content').all()[0].json.title}}*\\n\\n{{$('process-content').all()[0].json.excerpt}}\\n\\n<https://greenmindshift.com/admin/articles/{{$('create-blog-post').all()[0].json.id}}|Artikel überprüfen>\"\n      }\n    }\n  ]\n}"
+      },
+      "id": "slack-notification",
+      "name": "Slack Benachrichtigung",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Täglich um 9:00 Uhr": {
+      "main": [
+        [
+          {
+            "node": "Google Trends abrufen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Trends abrufen": {
+      "main": [
+        [
+          {
+            "node": "Nachhaltigkeits-Trends filtern",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nachhaltigkeits-Trends filtern": {
+      "main": [
+        [
+          {
+            "node": "Google Suche",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Suche": {
+      "main": [
+        [
+          {
+            "node": "Gemini AI Content Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini AI Content Generation": {
+      "main": [
+        [
+          {
+            "node": "Content verarbeiten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content verarbeiten": {
+      "main": [
+        [
+          {
+            "node": "Blog Post erstellen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Blog Post erstellen": {
+      "main": [
+        [
+          {
+            "node": "Slack Benachrichtigung",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "Europe/Berlin"
+  },
+  "versionId": "1"
+} 
