@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    appDir: true,
     mdxRs: true,
   },
   images: {
@@ -74,6 +73,7 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
   swcMinify: true,
+  output: 'standalone',
 };
 
 module.exports = nextConfig; 

@@ -28,7 +28,7 @@ ENV NEXTAUTH_URL=${NEXTAUTH_URL}
 ENV GEMINI_API_KEY=${GEMINI_API_KEY}
 
 # Generate Prisma client
-RUN npx prisma generate
+RUN npx prisma generate --schema=database/schema.prisma
 
 # Build the application
 RUN npm run build
@@ -51,6 +51,11 @@ RUN chown nextjs:nodejs .next
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Copy the prisma schema and generated client
+COPY --from=builder --chown=nextjs:nodejs /app/database ./database
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 
 USER nextjs
 
