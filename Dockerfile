@@ -3,8 +3,8 @@ FROM node:18-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-# Install OpenSSL 1.1 for Prisma compatibility
-RUN apk add --no-cache libc6-compat openssl1.1-compat
+# Install OpenSSL for Prisma compatibility
+RUN apk add --no-cache libc6-compat openssl openssl-dev
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
@@ -13,8 +13,8 @@ RUN npm ci --only=production
 
 # Rebuild the source code only when needed
 FROM base AS builder
-# Install OpenSSL 1.1 for Prisma compatibility
-RUN apk add --no-cache libc6-compat openssl1.1-compat
+# Install OpenSSL for Prisma compatibility
+RUN apk add --no-cache libc6-compat openssl openssl-dev
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
