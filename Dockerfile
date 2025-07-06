@@ -3,7 +3,8 @@ FROM node:18-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# Install OpenSSL 1.1 for Prisma compatibility
+RUN apk add --no-cache libc6-compat openssl1.1-compat
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
@@ -12,6 +13,8 @@ RUN npm ci --only=production
 
 # Rebuild the source code only when needed
 FROM base AS builder
+# Install OpenSSL 1.1 for Prisma compatibility
+RUN apk add --no-cache libc6-compat openssl1.1-compat
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -42,7 +45,9 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
+# Create public directory if it doesn't exist
+RUN mkdir -p public
+COPY --from=builder /app/public* ./public/ || true
 
 # Set the correct permission for prerender cache
 RUN mkdir .next
@@ -56,6 +61,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/database ./database
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+
+# Install curl for health check as root
+RUN apk add --no-cache curl
 
 USER nextjs
 
