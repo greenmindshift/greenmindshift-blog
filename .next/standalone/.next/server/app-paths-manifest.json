@@ -1,8 +1,0 @@
-{
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/health/route": "app/api/health/route.js",
-  "/api/trends/mark-processing/route": "app/api/trends/mark-processing/route.js",
-  "/api/content/check-hash/route": "app/api/content/check-hash/route.js",
-  "/api/trends/check-processed/route": "app/api/trends/check-processed/route.js",
-  "/page": "app/page.js"
-}
